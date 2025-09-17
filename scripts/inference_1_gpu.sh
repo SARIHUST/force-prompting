@@ -62,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       PRETRAINED_CONTROLNET_PATH="$2"
       shift 2
       ;;
+    --output_dir)
+      OUTPUT_DIR="$2"
+      shift 2
+      ;;
     *)
       # Skip unknown arguments
       shift
@@ -102,7 +106,7 @@ accelerate launch --config_file scripts/accelerate/accelerate_config_1_gpu.yaml 
   --enable_slicing \
   --seed 42 \
   --mixed_precision bf16 \
-  --output_dir \"output/$FORCE_TYPE\" \
+  --output_dir "$OUTPUT_DIR" \
   --height 480 \
   --width 720 \
   --fps 8 \

@@ -17,7 +17,7 @@ api_key = os.getenv('OPENAI_API_KEY')
 app = Flask(__name__)
 
 # Create necessary directories
-output_dir = "datasets/point-force/test/custom"
+output_dir = "../inference_dataset/point-force/test/custom"
 os.makedirs(output_dir, exist_ok=True)
 
 from mimetypes import guess_type
@@ -90,6 +90,9 @@ def optimize_prompt():
     data = request.json
     prompt = data.get('prompt', '')
     image_path = data.get('image_path', '')
+
+    if not os.path.isabs(image_path):
+        image_path = os.path.join(output_dir, "images", os.path.basename(image_path))
     
     if not os.path.exists(image_path):
         return jsonify({'error': f'Image not found: {image_path}'}), 404
@@ -145,6 +148,10 @@ user input:
 def get_pixel():
     data = request.json
     image_path = data.get('image_path')
+
+    if not os.path.isabs(image_path):
+        image_path = os.path.join(output_dir, "images", os.path.basename(image_path))
+        
     x = data.get('x')
     y = data.get('y')
     displayed_width = data.get('displayed_width')
@@ -185,6 +192,10 @@ def get_pixel():
 def write_csv():
     data = request.json
     image_path = data.get('image_path')
+
+    if not os.path.isabs(image_path):
+        image_path = os.path.join(output_dir, "images", os.path.basename(image_path))
+
     caption = data.get('caption')
     coord_x = data.get('coord_x')
     coord_y = data.get('coord_y')
@@ -251,4 +262,4 @@ def write_csv():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

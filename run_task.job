@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=14-train-wind-force-change
+#SBATCH --nice=0
+#SBATCH --output=%x_%j.out    # Output log file
+#SBATCH --time=48:00:00       # Set maximum job runtime
+#SBATCH --partition=jiang     # Adjust the partition based on availability
+#SBATCH --nodes=1             # Request a single node
+#SBATCH --ntasks=1            # Request one task
+#SBATCH --cpus-per-task=12     # Request multiple CPU cores for parallel processing
+#SBATCH --gres=gpu:a5000:1
+#SBATCH --mem=40G             # Request sufficient memory
+#SBATCH --mail-user=wang.hanh@northeastern.edu,hanh.wang@northeastern.edu
+#SBATCH --mail-type=FAIL,END
+
+cd /projects/vig/hhwang/PhysVideoGen/force-prompting
+source activate ${PWD}/conda-env
+sh scripts/build_synthetic_datasets/wind_model_waving_flags/single_gpu_parallel.sh

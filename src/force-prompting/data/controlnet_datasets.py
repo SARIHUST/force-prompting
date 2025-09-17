@@ -404,3 +404,81 @@ class ForcePromptingDataset_WindForce(BaseClass):
         controlnet_signal[:, 2] = math.sin(angle * torch.pi / 180.0)
         
         return controlnet_signal
+
+class ForcePromptingDataset_WindForce_Bidirectional(ForcePromptingDataset_WindForce):
+    # Bidirectional wind force dataset - The first half of the control signal video is the same as the original setting, the second half is the reverse of the first half
+
+    def load_controlnet_signal(self, force, angle, num_frames=49, num_channels=3, height=480, width=720):
+        
+        controlnet_signal = torch.zeros((num_frames, num_channels, height, width)) # (49, 3, 480, 720)
+
+        # first channel gets wind_speed
+        controlnet_signal[:, 0] = -1 + 2*(force-self.min_force)/(self.max_force-self.min_force)
+
+        # split the control signal into two halves
+        half = num_frames // 2
+        opp_angle = (angle + 180) % 360
+
+        # second channel gets cos(wind_angle)
+        controlnet_signal[:half, 1] = math.cos(angle * torch.pi / 180.0)
+        controlnet_signal[half:, 1] = math.cos(opp_angle * torch.pi / 180.0)
+
+        # third channel gets sin(wind_angle)
+        controlnet_signal[:half, 2] = math.sin(angle * torch.pi / 180.0)
+        controlnet_signal[half:, 2] = math.sin(opp_angle * torch.pi / 180.0)
+        
+        return controlnet_signal
+
+from data.data_utils import TRANSFORM_MODES
+
+class ForcePromptingDataset_WindForce_ChangeForce(ForcePromptingDataset_WindForce):
+    def __init__(self, csv_path, is_validation_dataset=False, *args, **kwargs):
+        super().__init__(csv_path, is_validation_dataset=is_validation_dataset, *args, **kwargs)
+    
+    # Change force dataset - The second half of the control signal video will be changed from the original setting
+
+    def load_controlnet_signal(self, force, angle, idx, num_frames=49, num_channels=3, height=480, width=720):
+        controlnet_signal = torch.zeros((num_frames, num_channels, height, width))
+
+        half = num_frames // 2
+
+        # first half of the control signal video is the same as the original setting
+        norm_force = -1 + 2*(force-self.min_force)/(self.max_force-self.min_force)
+        angle_rad = angle * torch.pi / 180.0
+        controlnet_signal[:half, 0] = norm_force
+        controlnet_signal[:half, 1] = math.cos(angle_rad)
+        controlnet_signal[:half, 2] = math.sin(angle_rad)
+
+        # second half of the control signal video is the transformed setting
+        mode_id = idx % len(TRANSFORM_MODES)
+        rot, fscale = TRANSFORM_MODES[mode_id]
+
+        mod_angle = (angle + rot) % 360
+        mod_force = force * fscale
+
+        norm_force = -1 + 2*(mod_force-self.min_force)/(self.max_force-self.min_force)
+        angle_rad = mod_angle * torch.pi / 180.0
+        controlnet_signal[half:, 0] = norm_force
+        controlnet_signal[half:, 1] = math.cos(angle_rad)
+        controlnet_signal[half:, 2] = math.sin(angle_rad)
+        
+        return controlnet_signal
+    
+    def get_batch(self, idx):
+        item = self.df.iloc[idx]
+        caption = item['caption']
+        file_name = item[self.media_type]
+        force = item['wind_speed']
+        angle = item['wind_angle']
+        file_path = os.path.join(self.video_root_dir, file_name)
+
+        if self.media_type == "image":
+            pixel_values = self.load_pixel_values_image(file_path)
+            file_id = file_name.split(".png")[0]
+        else:
+            pixel_values = self.load_pixel_values_video(file_path)
+            file_id = file_name.split(".mp4")[0]
+
+        controlnet_signal = self.load_controlnet_signal(force, angle, idx, height=self.height, width=self.width)
+
+        return pixel_values, caption, controlnet_signal, force, angle, file_id

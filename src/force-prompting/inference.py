@@ -51,6 +51,7 @@ from data.controlnet_datasets import (
 from data.data_utils import (
     collate_fn_ForcePromptingDataset_PointForce,
     collate_fn_ForcePromptingDataset_WindForce,
+    TRANSFORM_MODES,
 )
 
 import datetime
@@ -285,6 +286,197 @@ def add_aesthetic_wind_force_prompt_to_video(
 
     return result_video
 
+def add_aesthetic_wind_force_bidirectional_prompt_to_video(
+    video,
+    force,
+    angle,
+    num_frames_with_signal=1,
+    base_periods=1,
+    periods_per_0_1_force=1,
+    wave_amplitude=2,
+    extra_straight_length=20,
+    arrowhead_length=7,
+    forward_distance=6
+):
+    result_video = video.copy()
+    num_frames, height, width, channels = video.shape
+
+    arrowhead_base = int(arrowhead_length * (2 / math.sqrt(3)))
+
+    min_arrow_length = 30
+    max_arrow_length = 90  # final correct value
+
+    arrow_length = min_arrow_length + force * (max_arrow_length - min_arrow_length)
+    periods = base_periods + int(force * 10) * periods_per_0_1_force
+
+    # angle_rad = math.radians(angle)
+    # dir_x = math.cos(angle_rad)
+    # dir_y = -math.sin(angle_rad)
+    # perp_x = -dir_y
+    # perp_y = dir_x
+
+    base_x = width - 100
+    base_y = 100
+
+    num_annotation_frames = min(num_frames_with_signal, num_frames)
+    half = num_annotation_frames // 2
+
+    for i in range(min(num_frames_with_signal, num_frames)):
+        frame = (result_video[i] * 255).astype(np.uint8)
+
+        this_angle = angle if i < half else (angle + 180) % 360
+        angle_rad = math.radians(this_angle)
+        dir_x = math.cos(angle_rad)
+        dir_y = -math.sin(angle_rad)
+        perp_x = -dir_y
+        perp_y =  dir_x
+
+        for j in range(3):
+            offset = (j - 1) * 20
+            start_x = base_x + offset * perp_x
+            start_y = base_y + offset * perp_y
+
+            points = []
+            num_points = 100
+            squiggly_part_length = arrow_length - extra_straight_length
+            squiggly_end_t = squiggly_part_length / arrow_length
+
+            for k in range(num_points):
+                t = k / (num_points - 1)
+                if t < squiggly_end_t:
+                    main_x = start_x + dir_x * t * arrow_length
+                    main_y = start_y + dir_y * t * arrow_length
+                    squiggle = math.sin(t * periods * 2 * math.pi) * wave_amplitude
+                    squiggle_x = main_x + perp_x * squiggle
+                    squiggle_y = main_y + perp_y * squiggle
+                else:
+                    straight_progress = (t - squiggly_end_t) / (1 - squiggly_end_t)
+                    main_x = start_x + dir_x * (squiggly_part_length + straight_progress * extra_straight_length)
+                    main_y = start_y + dir_y * (squiggly_part_length + straight_progress * extra_straight_length)
+                    squiggle_x = main_x
+                    squiggle_y = main_y
+
+                points.append((int(squiggle_x), int(squiggle_y)))
+
+            for p in range(len(points) - 1):
+                cv2.line(frame, points[p], points[p + 1], (0, 255, 255), 2)
+
+            tip = points[-1]
+            tip_forward_x = tip[0] + forward_distance * dir_x
+            tip_forward_y = tip[1] + forward_distance * dir_y
+            tip_point = (int(tip_forward_x), int(tip_forward_y))
+
+            base_center_x = tip[0] - arrowhead_length * dir_x
+            base_center_y = tip[1] - arrowhead_length * dir_y
+
+            left_base_x = int(base_center_x + (arrowhead_base / 2) * -dir_y)
+            left_base_y = int(base_center_y + (arrowhead_base / 2) * dir_x)
+
+            right_base_x = int(base_center_x - (arrowhead_base / 2) * -dir_y)
+            right_base_y = int(base_center_y - (arrowhead_base / 2) * dir_x)
+
+            cv2.line(frame, (left_base_x, left_base_y), tip_point, (0, 255, 255), 2)
+            cv2.line(frame, (right_base_x, right_base_y), tip_point, (0, 255, 255), 2)
+
+        result_video[i] = frame / 255.0
+
+    return result_video
+
+def add_aesthetic_wind_force_change_prompt_to_video(
+    video,
+    force,
+    angle,
+    idx,
+    num_frames_with_signal=1,
+    base_periods=1,
+    periods_per_0_1_force=1,
+    wave_amplitude=2,
+    extra_straight_length=20,
+    arrowhead_length=7,
+    forward_distance=6
+):
+    mode_id = idx % len(TRANSFORM_MODES)
+    rot, fscale = TRANSFORM_MODES[mode_id]
+
+    result_video = video.copy()
+    num_frames, height, width, channels = video.shape
+
+    arrowhead_base = int(arrowhead_length * (2 / math.sqrt(3)))
+
+    min_arrow_length = 30
+    max_arrow_length = 90  # final correct value
+
+    original_arrow_length = min_arrow_length + force * (max_arrow_length - min_arrow_length)
+    periods = base_periods + int(force * 10) * periods_per_0_1_force
+
+    base_x = width - 100
+    base_y = 100
+
+    num_annotation_frames = min(num_frames_with_signal, num_frames)
+    half = num_annotation_frames // 2
+
+    for i in range(min(num_frames_with_signal, num_frames)):
+        frame = (result_video[i] * 255).astype(np.uint8)
+
+        this_angle = angle if i < half else (angle + rot) % 360
+        arrow_length = min_arrow_length + force * (max_arrow_length - min_arrow_length) * fscale if i >= half else original_arrow_length
+        angle_rad = math.radians(this_angle)
+        dir_x = math.cos(angle_rad)
+        dir_y = -math.sin(angle_rad)
+        perp_x = -dir_y
+        perp_y =  dir_x
+
+        for j in range(3):
+            offset = (j - 1) * 20
+            start_x = base_x + offset * perp_x
+            start_y = base_y + offset * perp_y
+
+            points = []
+            num_points = 100
+            squiggly_part_length = arrow_length - extra_straight_length
+            squiggly_end_t = squiggly_part_length / arrow_length
+
+            for k in range(num_points):
+                t = k / (num_points - 1)
+                if t < squiggly_end_t:
+                    main_x = start_x + dir_x * t * arrow_length
+                    main_y = start_y + dir_y * t * arrow_length
+                    squiggle = math.sin(t * periods * 2 * math.pi) * wave_amplitude
+                    squiggle_x = main_x + perp_x * squiggle
+                    squiggle_y = main_y + perp_y * squiggle
+                else:
+                    straight_progress = (t - squiggly_end_t) / (1 - squiggly_end_t)
+                    main_x = start_x + dir_x * (squiggly_part_length + straight_progress * extra_straight_length)
+                    main_y = start_y + dir_y * (squiggly_part_length + straight_progress * extra_straight_length)
+                    squiggle_x = main_x
+                    squiggle_y = main_y
+
+                points.append((int(squiggle_x), int(squiggle_y)))
+
+            for p in range(len(points) - 1):
+                cv2.line(frame, points[p], points[p + 1], (0, 255, 255), 2)
+
+            tip = points[-1]
+            tip_forward_x = tip[0] + forward_distance * dir_x
+            tip_forward_y = tip[1] + forward_distance * dir_y
+            tip_point = (int(tip_forward_x), int(tip_forward_y))
+
+            base_center_x = tip[0] - arrowhead_length * dir_x
+            base_center_y = tip[1] - arrowhead_length * dir_y
+
+            left_base_x = int(base_center_x + (arrowhead_base / 2) * -dir_y)
+            left_base_y = int(base_center_y + (arrowhead_base / 2) * dir_x)
+
+            right_base_x = int(base_center_x - (arrowhead_base / 2) * -dir_y)
+            right_base_y = int(base_center_y - (arrowhead_base / 2) * dir_x)
+
+            cv2.line(frame, (left_base_x, left_base_y), tip_point, (0, 255, 255), 2)
+            cv2.line(frame, (right_base_x, right_base_y), tip_point, (0, 255, 255), 2)
+
+        result_video[i] = frame / 255.0
+
+    return result_video
+
 def get_object_description_point_force(file_id):
 
     file_id_to_object_description = {
@@ -360,7 +552,7 @@ def do_inference(
 
     # for validation_prompt, validation_video in zip(validation_prompts, validation_videos):
     print(f"Beginning val with {len(val_dataloader)} batches...")
-    for _, val_batch in enumerate(val_dataloader):
+    for idx, val_batch in enumerate(val_dataloader):
 
         # BASELINE: controlnet weights = 0, updated text prompt
         # PHYSICS CONTROL: controlnet weights = 1, original text prompt
@@ -418,7 +610,7 @@ def do_inference(
                 },
             }
 
-        elif args.controlnet_type == "wind_force": # wind force
+        elif args.controlnet_type == "wind_force" or args.controlnet_type == "wind_force_bidirectional" or args.controlnet_type == "wind_force_change": # wind force
             if "force" in val_batch and "angle" in val_batch:
                 assert len(val_batch["force"]) == len(val_batch["angle"]) == 1
                 force = val_batch["force"][0]
@@ -511,8 +703,18 @@ def do_inference(
             }
             if len(embedding_map) > 0: # in case we precomputed embeddings
                 del[pipeline_args["prompt"]]
-                pipeline_args["prompt_embeds"] = torch.load(embedding_map[prompt])
-                pipeline_args["negative_prompt_embeds"] = torch.load(embedding_map[''])
+
+                emb = torch.load(embedding_map[prompt], map_location="cpu")
+                neg = torch.load(embedding_map[''], map_location="cpu")
+
+                emb = emb.to(accelerator.device)
+                neg = neg.to(accelerator.device)
+
+                pipeline_args["prompt_embeds"] = emb
+                pipeline_args["negative_prompt_embeds"] = neg
+
+                # pipeline_args["prompt_embeds"] = torch.load(embedding_map[prompt])
+                # pipeline_args["negative_prompt_embeds"] = torch.load(embedding_map[''])
 
 
 
@@ -589,6 +791,14 @@ def do_inference(
                 elif args.controlnet_type == "wind_force":
                     video_with_force_prompt_aesthetic = add_aesthetic_wind_force_prompt_to_video(
                         video, normalized_force, angle, num_frames_with_signal=49
+                    )
+                elif args.controlnet_type == "wind_force_bidirectional":
+                    video_with_force_prompt_aesthetic = add_aesthetic_wind_force_bidirectional_prompt_to_video(
+                        video, normalized_force, angle, num_frames_with_signal=49
+                    )
+                elif args.controlnet_type == "wind_force_change":
+                    video_with_force_prompt_aesthetic = add_aesthetic_wind_force_change_prompt_to_video(
+                        video, normalized_force, angle, idx, num_frames_with_signal=49
                     )
 
                 export_to_video(

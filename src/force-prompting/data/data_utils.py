@@ -63,3 +63,13 @@ def collate_fn_ForcePromptingDataset_WindForce(examples):
         "force": forces,
         "angle": angles,
     }
+
+TRANSFORM_MODES = [
+    (0,   0.5),
+    (90,  1.0),
+    (90,  0.5),
+    (180, 1.0),
+    (180, 0.5),
+    (270, 1.0),
+    (270, 0.5),
+]

@@ -47,6 +47,8 @@ from utils.video_utils import prepare_rotary_positional_embeddings, encode_video
 from data.controlnet_datasets import (
     ForcePromptingDataset_PointForce,
     ForcePromptingDataset_WindForce,
+    ForcePromptingDataset_WindForce_Bidirectional,
+    ForcePromptingDataset_WindForce_ChangeForce,
 )
 from data.data_utils import (
     collate_fn_ForcePromptingDataset_PointForce,
@@ -78,6 +80,12 @@ def get_dataloader_constructors(controlnet_type):
         collate_fn = collate_fn_ForcePromptingDataset_PointForce
     elif controlnet_type == "wind_force":
         DatasetConstructor = ForcePromptingDataset_WindForce
+        collate_fn = collate_fn_ForcePromptingDataset_WindForce
+    elif controlnet_type == "wind_force_bidirectional":
+        DatasetConstructor = ForcePromptingDataset_WindForce_Bidirectional
+        collate_fn = collate_fn_ForcePromptingDataset_WindForce
+    elif controlnet_type == "wind_force_change":
+        DatasetConstructor = ForcePromptingDataset_WindForce_ChangeForce
         collate_fn = collate_fn_ForcePromptingDataset_WindForce
     else:
         raise NotImplementedError
@@ -265,7 +273,8 @@ def main(args):
         global_step = int(os.path.basename(args.pretrained_controlnet_path).split(".")[0].split("-")[1]) - 1
         
         # Set the output directory to the same directory as the checkpoint
-        args.output_dir = os.path.dirname(args.pretrained_controlnet_path)
+        output_dir = os.path.dirname(args.pretrained_controlnet_path)
+        args.output_dir = os.path.join(output_dir, args.output_dir) # for now, only for inference
         
         # Define paths to optimizer and scheduler states
         # optimizer_path = os.path.join(args.output_dir, f"step-{global_step}-optimizer.pt")

@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH --job-name=img-to-video
+#SBATCH --nice=0
+#SBATCH --output=%x_%j.out    # Output log file
+#SBATCH --time=48:00:00       # Set maximum job runtime
+#SBATCH --partition=jiang     # Adjust the partition based on availability
+#SBATCH --nodes=1             # Request a single node
+#SBATCH --ntasks=1            # Request one task
+#SBATCH --cpus-per-task=12     # Request multiple CPU cores for parallel processing
+#SBATCH --gres=gpu:a5000:1
+#SBATCH --mem=40G             # Request sufficient memory
+#SBATCH --mail-user=wang.hanh@northeastern.edu,hanh.wang@northeastern.edu
+#SBATCH --mail-type=FAIL,END
+
+cd /projects/vig/hhwang/PhysVideoGen/force-prompting
+source activate ${PWD}/conda-env
+module load FFmpeg
+
+# image to video
+RENDER_DIR=/scratch/hanh.wang/waving_flags_change_force/pngs
+python scripts/build_synthetic_datasets/wind_model_waving_flags/waving_flags_png_to_mp4_change_force.py $RENDER_DIR
+
+# generate csv
+RENDER_DIR=/scratch/hanh.wang/waving_flags_change_force
+python scripts/build_synthetic_datasets/wind_model_waving_flags/generate_csv_from_dir_change_force.py \
+    --file_dir ${RENDER_DIR}/videos \
+    --file_type video \
+    --output_path ${RENDER_DIR}/waving-flags.csv \
+    --backgrounds_json_path scripts/build_synthetic_datasets/wind_model_waving_flags/backgrounds.json 

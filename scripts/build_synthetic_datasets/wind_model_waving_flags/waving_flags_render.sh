@@ -3,8 +3,9 @@
 #################### FOR USER TO CONFIGURE: things in this block ####################
 #####################################################################################
 #####################################################################################
-module load blender/4.4.0-446jdgt       # need blender
-RENDER_DIR_ROOT=~/scratch/waving_flags  # set to render directory
+# module load blender/4.4.0-446jdgt       # need blender
+BLENDER=/projects/vig/hhwang/software/blender-4.4.0-linux-x64/blender
+RENDER_DIR_ROOT=/scratch/hanh.wang/waving_flags_change_force # set to render directory
 #####################################################################################
 #####################################################################################
 
@@ -17,12 +18,12 @@ SOURCE_BLEND="scripts/build_synthetic_datasets/wind_model_waving_flags/waving_fl
 
 # Run Blender
 echo "Starting Blender render with copied file..."
-for i in {1..1000}
+for i in {1..500}
 do
-    blender \
+    ${BLENDER} \
         --enable-autoexec \
         -b "${SOURCE_BLEND}" \
-        -P scripts/build_synthetic_datasets/wind_model_waving_flags/waving_flags.py \
+        -P scripts/build_synthetic_datasets/wind_model_waving_flags/waving_flags_change_force.py \
         -s 1 \
         -e 240 \
         -x 1 \

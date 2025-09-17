@@ -8,9 +8,12 @@ from mathutils import Vector
 
 
 # Global variables to store the random parameters
-GENERATED_WIND_SPEED = None
-GENERATED_WIND_ANGLE_blender_interpretable = None
-GENERATED_WIND_ANGLE_human_interpretable = None
+GENERATED_WIND_SPEED_1 = None
+GENERATED_WIND_SPEED_2 = None
+GENERATED_WIND_ANGLE_blender_interpretable_1 = None
+GENERATED_WIND_ANGLE_blender_interpretable_2 = None
+GENERATED_WIND_ANGLE_human_interpretable_1 = None
+GENERATED_WIND_ANGLE_human_interpretable_2 = None
 GENERATED_FLAG_COLORS = None
 GENERATED_HDRI = None
 OUTPUT_PATH = None
@@ -86,14 +89,14 @@ def randomize_flag_colors(flag_material=None):
     else:
         flag_found = False
         for material in bpy.data.materials:
-            if "flag" in material.name.lower():
+            if "flag" in material.name.lower(): # see if there is a direct flag material
                 update_material_colors(material, color1, color2)
                 FLAG_MATERIAL = material
                 flag_found = True
                 break
         if not flag_found:
             for obj in bpy.data.objects:
-                if any(mod.type == 'CLOTH' for mod in obj.modifiers):
+                if any(mod.type == 'CLOTH' for mod in obj.modifiers):   # see if there is a cloth modifier
                     for mat_slot in obj.material_slots:
                         if mat_slot.material:
                             update_material_colors(mat_slot.material, color1, color2)
@@ -161,7 +164,7 @@ def setup_flag_position():
 def randomize_hdri_background():
     """Find and apply a random HDRI from the HDRIs folder."""
     global GENERATED_HDRI
-    hdri_dir = "scripts/build_synthetic_datasets/wind_model_waving_flags/HDRIs"
+    hdri_dir = ".cache/HDRIs"
     if not os.path.exists(hdri_dir):
         print("ERROR: you need to download the HRDIs.")
     hdri_extensions = ['.exr', '.hdr']
@@ -206,13 +209,44 @@ def setup_hdri_world(hdri_path):
     return True
 
 def setup_wind():
-    global GENERATED_WIND_SPEED, GENERATED_WIND_ANGLE_blender_interpretable, GENERATED_WIND_ANGLE_human_interpretable
-    GENERATED_WIND_SPEED = random.uniform(0, 15000)
-    GENERATED_WIND_SPEED = 7500
-    GENERATED_WIND_ANGLE_blender_interpretable = random.uniform(0.0, 360.0)
-    GENERATED_WIND_ANGLE_blender_interpretable = 90
-    GENERATED_WIND_ANGLE_human_interpretable = (90 - GENERATED_WIND_ANGLE_blender_interpretable) % 360 
+    # set up a changable wind force field: 1st 1/3 of the animation is no wind, 2nd 1/3 is a certain wind, 3rd 1/3 is a different wind
+    global GENERATED_WIND_SPEED_1, GENERATED_WIND_SPEED_2, GENERATED_WIND_ANGLE_blender_interpretable_1, GENERATED_WIND_ANGLE_blender_interpretable_2, GENERATED_WIND_ANGLE_human_interpretable_1, GENERATED_WIND_ANGLE_human_interpretable_2
+    
     scene = bpy.context.scene
+    if scene.animation_data:
+        scene.animation_data_clear()
+    start_frame = scene.frame_start
+    end_frame = scene.frame_end
+    total_frames = end_frame - start_frame + 1
+
+    # divide the animation into 3 parts
+    seg_len = total_frames // 3
+    phase0_start = start_frame
+    phase0_end = start_frame + seg_len - 1
+    phase1_start = phase0_end + 1
+    phase1_end = phase1_start + seg_len - 1
+    phase2_start = phase1_end + 1
+    phase2_end = end_frame
+
+    # set up the random parameters for each phase
+    #NOTE: Later we can add constraints to the wind parameters so that the winds are quite different from each other
+    speed1 = random.uniform(0, 15000)
+    angle1_blender = random.uniform(0.0, 360.0)
+    angle1_human = (90 - angle1_blender) % 360
+
+    speed2 = random.uniform(0, 15000)
+    angle2_blender = random.uniform(0.0, 360.0)
+    # angle2_blender = (angle1_blender + 180) % 360   # sanity check, reverse the direction of the wind
+    angle2_human = (90 - angle2_blender) % 360
+
+    # pass the parameters to the global variables
+    GENERATED_WIND_SPEED_1 = speed1
+    GENERATED_WIND_ANGLE_blender_interpretable_1 = angle1_blender
+    GENERATED_WIND_ANGLE_human_interpretable_1 = angle1_human
+    GENERATED_WIND_SPEED_2 = speed2
+    GENERATED_WIND_ANGLE_blender_interpretable_2 = angle2_blender
+    GENERATED_WIND_ANGLE_human_interpretable_2 = angle2_human
+
     if scene.animation_data:
         scene.animation_data_clear()
     wind_obj = None
@@ -220,72 +254,95 @@ def setup_wind():
         if hasattr(obj, 'field') and obj.field and hasattr(obj.field, 'type') and obj.field.type == 'WIND':
             wind_obj = obj
             break
-    print(f"Setting up wind animation: Speed={GENERATED_WIND_SPEED}, Angle={GENERATED_WIND_ANGLE_human_interpretable}")
+    
     if not wind_obj:
         print("Error: No wind force field found in the scene.")
         return
     current_x = wind_obj.rotation_euler.x
     current_z = wind_obj.rotation_euler.z
-    wind_angle_rad = math.radians(GENERATED_WIND_ANGLE_blender_interpretable)
-    wind_obj.rotation_euler = (current_x, wind_angle_rad, current_z)
     wind = wind_obj.field
+
+    # remove all existing keyframes, without this, there will be some unexpected results
+    if wind_obj.animation_data and wind_obj.animation_data.action:
+        action = wind_obj.animation_data.action
+        for fc in list(action.fcurves):
+            if fc.data_path.endswith("strength"):
+                action.fcurves.remove(fc)
+
+    # phase 0: no wind
     wind.strength = 0
-    wind.keyframe_insert(data_path="strength", frame=1)
-    wind.strength = 0
-    wind.keyframe_insert(data_path="strength", frame=5 * 24)
-    wind.strength = GENERATED_WIND_SPEED
-    wind.keyframe_insert(data_path="strength", frame=5 * 24 + 1)
-    wind.keyframe_insert(data_path="strength", frame=10 * 24)
+    wind.keyframe_insert(data_path="strength", frame=phase0_start)
+    wind.keyframe_insert(data_path="strength", frame=phase0_end)
+
+    # phase 1: wind 1
+    wind.strength = speed1
+    wind.keyframe_insert(data_path="strength", frame=phase1_start)
+    wind.keyframe_insert(data_path="strength", frame=phase1_end)
+    wind_obj.rotation_euler = (current_x, math.radians(angle1_blender), current_z)
+    wind_obj.keyframe_insert(data_path="rotation_euler", frame=phase1_start)
+    wind_obj.rotation_euler = (current_x, math.radians(angle1_blender), current_z)
+    wind_obj.keyframe_insert(data_path="rotation_euler", frame=phase1_end)
+
+    # phase 2: wind 2
+    wind.strength = speed2
+    wind.keyframe_insert(data_path="strength", frame=phase2_start)
+    wind.keyframe_insert(data_path="strength", frame=phase2_end)
+    wind_obj.rotation_euler = (current_x, math.radians(angle2_blender), current_z)
+    wind_obj.keyframe_insert(data_path="rotation_euler", frame=phase2_start)
+    wind_obj.rotation_euler = (current_x, math.radians(angle2_blender), current_z)
+    wind_obj.keyframe_insert(data_path="rotation_euler", frame=phase2_end)
+
     if wind_obj.animation_data and wind_obj.animation_data.action:
         for fcurve in wind_obj.animation_data.action.fcurves:
             for kf in fcurve.keyframe_points:
                 kf.interpolation = 'BEZIER'
 
-    # print("Speed: ", GENERATED_WIND_SPEED)
-    # print("Angle: ", GENERATED_WIND_ANGLE_blender_interpretable)
+    # #NOTE: check the keyframes and the values for each frame
+    # print("Speed1: ", speed1, "Speed2: ", speed2)
+    # print("Angle1: ", angle1_blender, "Angle2: ", angle2_blender)
 
     # for fcurve in wind_obj.animation_data.action.fcurves:
     #     if fcurve.data_path.endswith("strength"):
-    #         print("关键帧数量:", len(fcurve.keyframe_points))
+    #         print("keyframe number:", len(fcurve.keyframe_points))
     #         for kf in fcurve.keyframe_points:
     #             print("frame", kf.co.x, "value", kf.co.y)
 
-    # # ====== 采样范围 ======
-    # frame_start = 1   # 或者 1
-    # frame_end   = 240     # 或者 240，根据你的需要
+    # frame_start = phase0_start
+    # frame_end   = phase2_end
 
-    # # 找 strength 的 fcurve
+    # # find the fcurve of strength
     # fc_strength = None
-    # fc_angle_y  = None  # rotation_euler[1] 对应 Y 轴旋转
+    # fc_angle_y  = None
 
     # if wind_obj.animation_data and wind_obj.animation_data.action:
     #     for fc in wind_obj.animation_data.action.fcurves:
-    #         if fc.data_path == "field.strength":   # 注意 data_path 可能是 "field.strength" 或 "strength"
+    #         if fc.data_path == "field.strength":
     #             fc_strength = fc
-    #         if fc.data_path == "rotation_euler" and fc.array_index == 1:  # Y 轴
+    #         if fc.data_path == "rotation_euler" and fc.array_index == 1:
     #             fc_angle_y = fc
 
-    # # 采样
+    # # sample the strength and angle
     # rows = [("frame", "strength", "angle_deg")]
     # for f in range(frame_start, frame_end + 1):
     #     # evaluate strength
     #     val_s = fc_strength.evaluate(f) if fc_strength else wind.strength
-    #     # evaluate rotation Y 并转成度数
+    #     # evaluate rotation Y and convert to degrees
     #     val_a = math.degrees(fc_angle_y.evaluate(f)) if fc_angle_y else math.degrees(wind_obj.rotation_euler[1])
     #     rows.append((f, val_s, val_a))
 
-    # # 写 CSV
+    # # write to CSV
     # out_path = "/projects/vig/hhwang/wind_strength_angle.csv"
     # with open(out_path, "w", newline="") as fp:
     #     import csv
     #     writer = csv.writer(fp)
     #     writer.writerows(rows)
-
     # print(f"Saved: {out_path}")
     # exit()
 
     update_output_path()
-    print(f"Wind animation setup complete! Wind speed: {GENERATED_WIND_SPEED}, Wind angle: {GENERATED_WIND_ANGLE_human_interpretable}°")
+    print(f"[3-phase wind] Frames {phase0_start}-{phase0_end}: Calm, "
+          f"{phase1_start}-{phase1_end}: Wind1 (speed={speed1:.1f}, angle={angle1_human:.1f}°), "
+          f"{phase2_start}-{phase2_end}: Wind2 (speed={speed2:.1f}, angle={angle2_human:.1f}°)")
     print(f"Output directory set to: {OUTPUT_PATH}")
 
 def create_flag_template_group():
@@ -433,9 +490,11 @@ def setup_random_scene():
     place_extra_flags()
 
 def update_output_path():
-    global GENERATED_WIND_SPEED, GENERATED_WIND_ANGLE_human_interpretable, GENERATED_FLAG_COLORS, GENERATED_HDRI, OUTPUT_PATH
-    speed_str = f"{GENERATED_WIND_SPEED:.1f}"
-    angle_str = f"{GENERATED_WIND_ANGLE_human_interpretable:.1f}"
+    global GENERATED_WIND_SPEED_1, GENERATED_WIND_SPEED_2, GENERATED_WIND_ANGLE_blender_interpretable_1, GENERATED_WIND_ANGLE_blender_interpretable_2, GENERATED_WIND_ANGLE_human_interpretable_1, GENERATED_WIND_ANGLE_human_interpretable_2, GENERATED_FLAG_COLORS, GENERATED_HDRI, OUTPUT_PATH
+    speed_str1 = f"{GENERATED_WIND_SPEED_1:.1f}"
+    angle_str1 = f"{GENERATED_WIND_ANGLE_human_interpretable_1:.1f}"
+    speed_str2 = f"{GENERATED_WIND_SPEED_2:.1f}"
+    angle_str2 = f"{GENERATED_WIND_ANGLE_human_interpretable_2:.1f}"
     color_part = ""
     if GENERATED_FLAG_COLORS:
         color1 = GENERATED_FLAG_COLORS["color1"]
@@ -452,13 +511,15 @@ def update_output_path():
     base_output_dir = os.path.dirname(base_output_dir)
     if not base_output_dir.endswith('/'):
         base_output_dir += '/'
-    param_dir = f"flag_speed_{speed_str}_angle_{angle_str}"
+    param_dir = f"flag_speed_{speed_str1}_{speed_str2}_angle_{angle_str1}_{angle_str2}"
     OUTPUT_PATH = os.path.join(base_output_dir, param_dir)
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     bpy.context.scene.render.filepath = os.path.join(OUTPUT_PATH, "frame####")
     params = {
-        "wind_speed": GENERATED_WIND_SPEED,
-        "wind_angle": GENERATED_WIND_ANGLE_human_interpretable,
+        "wind_speed_1": GENERATED_WIND_SPEED_1,
+        "wind_angle_1": GENERATED_WIND_ANGLE_human_interpretable_1,
+        "wind_speed_2": GENERATED_WIND_SPEED_2,
+        "wind_angle_2": GENERATED_WIND_ANGLE_human_interpretable_2,
         "flag_colors": GENERATED_FLAG_COLORS,
         "hdri_background": GENERATED_HDRI
     }
@@ -479,19 +540,19 @@ class OBJECT_OT_setup_random_scene(bpy.types.Operator):
         return {'FINISHED'}
 
 def render_complete_handler(scene):
-    global OUTPUT_PATH, GENERATED_WIND_SPEED, GENERATED_WIND_ANGLE_human_interpretable, GENERATED_FLAG_COLORS, GENERATED_HDRI
-    if not OUTPUT_PATH or not GENERATED_WIND_SPEED or not GENERATED_WIND_ANGLE_human_interpretable:
+    global OUTPUT_PATH, GENERATED_WIND_SPEED_1, GENERATED_WIND_ANGLE_human_interpretable_1, GENERATED_WIND_SPEED_2, GENERATED_WIND_ANGLE_human_interpretable_2, GENERATED_FLAG_COLORS, GENERATED_HDRI
+    if not OUTPUT_PATH or not GENERATED_WIND_SPEED_1 or not GENERATED_WIND_ANGLE_human_interpretable_1 or not GENERATED_WIND_SPEED_2 or not GENERATED_WIND_ANGLE_human_interpretable_2:
         print("Missing parameters for post-render processing")
         return
     print(f"Rendering complete! Files saved to: {OUTPUT_PATH}")
-    print(f"Parameters used: Wind Speed = {GENERATED_WIND_SPEED}, Wind Angle = {GENERATED_WIND_ANGLE_human_interpretable}")
+    print(f"Parameters used: Wind Speed1 = {GENERATED_WIND_SPEED_1}, Wind Angle1 = {GENERATED_WIND_ANGLE_human_interpretable_1}, Wind Speed2 = {GENERATED_WIND_SPEED_2}, Wind Angle2 = {GENERATED_WIND_ANGLE_human_interpretable_2}")
     if GENERATED_FLAG_COLORS:
         color1 = GENERATED_FLAG_COLORS["color1"]
         color2 = GENERATED_FLAG_COLORS["color2"]
         print(f"Flag colors: Primary RGB({color1[0]:.2f}, {color1[1]:.2f}, {color1[2]:.2f}), Secondary RGB({color2[0]:.2f}, {color2[1]:.2f}, {color2[2]:.2f})")
     if GENERATED_HDRI:
         print(f"HDRI background: {GENERATED_HDRI}")
-    print(f"For MP4 creation, use: flag_sample_{GENERATED_WIND_SPEED:.1f}_0.0_{GENERATED_WIND_ANGLE_human_interpretable:.1f}_0.0.mp4")
+    print(f"For MP4 creation, use: flag_sample_{GENERATED_WIND_SPEED_1:.1f}_{GENERATED_WIND_SPEED_2:.1f}_{GENERATED_WIND_ANGLE_human_interpretable_1:.1f}_{GENERATED_WIND_ANGLE_human_interpretable_2:.1f}.mp4")
 
 classes = (OBJECT_OT_setup_random_scene,)
 

@@ -60,6 +60,8 @@ def get_args():
         choices=[
             "point_force", 
             "wind_force",
+            "wind_force_bidirectional",
+            "wind_force_change",
         ],
         help=("Controlnet type."),
     )
