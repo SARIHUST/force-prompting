@@ -377,10 +377,11 @@ class ForcePromptingDataset_WindForce(BaseClass):
     def load_pixel_values_video(self, video_path):
 
         video_reader = VideoReader(video_path)
-        if random.uniform(0, 1) < 0.5:
-            indices = np.array([i for i in range(self.sample_n_frames)], dtype=int)
-        else:
-            indices = np.array([2*i for i in range(self.sample_n_frames)], dtype=int)
+        indices = np.array([i for i in range(self.sample_n_frames)], dtype=int)
+        # if random.uniform(0, 1) < 0.5:
+        #     indices = np.array([i for i in range(self.sample_n_frames)], dtype=int)
+        # else:
+        #     indices = np.array([2*i for i in range(self.sample_n_frames)], dtype=int)
 
         # Get the selected frames
         np_video = video_reader.get_batch(indices).asnumpy() # (49, 480, 720, 3)
@@ -431,6 +432,7 @@ class ForcePromptingDataset_WindForce_Bidirectional(ForcePromptingDataset_WindFo
 
 from data.data_utils import TRANSFORM_MODES
 
+# This is the dataset for the changable wind force during the inference stage
 class ForcePromptingDataset_WindForce_ChangeForce(ForcePromptingDataset_WindForce):
     def __init__(self, csv_path, is_validation_dataset=False, *args, **kwargs):
         super().__init__(csv_path, is_validation_dataset=is_validation_dataset, *args, **kwargs)
@@ -479,6 +481,139 @@ class ForcePromptingDataset_WindForce_ChangeForce(ForcePromptingDataset_WindForc
             pixel_values = self.load_pixel_values_video(file_path)
             file_id = file_name.split(".mp4")[0]
 
-        controlnet_signal = self.load_controlnet_signal(force, angle, idx, height=self.height, width=self.width)
+        controlnet_signal = self.load_controlnet_signal(force, angle, idx, height=self.height, width=self.width, num_frames=self.sample_n_frames)
 
         return pixel_values, caption, controlnet_signal, force, angle, file_id
+
+# This is the dataset for the changable wind force during the training stage
+# Which is currently using the 160 frames video 
+class ForcePromptingDataset_WindForce_ChangeForce_Train(BaseClass):
+    def __init__(self, csv_path, is_validation_dataset=False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.is_validation_dataset = is_validation_dataset
+        try:
+            assert self.is_validation_dataset == False
+        except:
+            raise ValueError("This dataset is only for training")
+
+        if is_validation_dataset:
+            self.media_type = "image"
+            blob_ext =  "*.png"
+        else:
+            self.media_type = "video"
+            blob_ext = "*.mp4"
+
+        file_paths = glob.glob(os.path.join(self.video_root_dir, blob_ext))
+        file_names = set([os.path.basename(x) for x in file_paths]) # list of videos or images...
+        self.df = pd.read_csv(csv_path)
+
+        # only keep the rows in the csv whose videos we can find
+        self.df['checked'] = self.df[self.media_type].map(lambda x, files=file_names: int(x in files))
+        self.df = self.df[self.df['checked'] == True]
+
+        self.min_force = min(float(self.df["wind_speed_1"].min()), float(self.df["wind_speed_2"].min()))
+        self.max_force = max(float(self.df["wind_speed_1"].max()), float(self.df["wind_speed_2"].max()))
+
+        self.length = self.df.shape[0]
+
+    def get_batch(self, idx):
+
+        item = self.df.iloc[idx]
+        caption = item['caption']
+        file_name = item[self.media_type]
+        force_1 = item['wind_speed_1']
+        force_2 = item['wind_speed_2']
+        angle_1 = item['wind_angle_1']
+        angle_2 = item['wind_angle_2']
+        file_path = os.path.join(self.video_root_dir, file_name)
+
+        # since we are changing the force and currently the videos are split to 80 + 80 frames, and we are using 49 frames for training, we might consider using the middle 49 frames for training
+        # we first try out 56-79 (which will be force_1, angle_1) + 80-104 (which will be force_2, angle_2)
+        start_indice = 56
+        # start_indice = 85   # check if just using the second half causes any issues
+        # start_indice = 0   # check if just using the first half causes any issues
+
+        # we can also consider using some randomness here
+        # start_indice = random.randint(0, 160 - self.sample_n_frames)
+
+        if self.media_type == "image":
+            pixel_values = self.load_pixel_values_image(file_path) # (1, 3, 480, 720) of torch.float32 in [-1, 1]
+            file_id = file_name.split(".png")[0]
+        elif self.media_type == "video":
+            pixel_values = self.load_pixel_values_video(file_path, start_indice=start_indice) # (49, 3, 480, 720) of torch.float32 in [-1, 1]
+            file_id = file_name.split(".mp4")[0]
+
+        controlnet_signal = self.load_controlnet_signal(
+            force_1, force_2, angle_1, angle_2, height=self.height, width=self.width, num_frames=self.sample_n_frames, start_indice=start_indice
+        )   # we need to pass in start_indice to built the correct controlnet signal -> matches with the selected frames of the video
+
+        return pixel_values, caption, controlnet_signal, force_1, force_2, angle_1, angle_2, file_id
+
+    def __getitem__(self, idx):
+        while True:
+            try:
+                pixel_values, caption, controlnet_signal, force_1, force_2, angle_1, angle_2, file_id = self.get_batch(idx)
+                # video, caption, controlnet_video = self.get_batch(idx)
+                break
+            except Exception as e:
+                print(e) # this prints 'text' incessantly
+                idx = random.randint(0, self.length - 1)
+            
+        pixel_values = [
+            resize_for_crop(x, self.height, self.width) for x in [pixel_values]
+        ][0]
+        pixel_values = [
+            transforms.functional.center_crop(x, (self.height, self.width)) for x in [pixel_values]
+        ][0]
+        data = {
+            'file_id' : file_id,
+            'video': pixel_values, 
+            'caption': caption, 
+            'controlnet_video': controlnet_signal,
+            'force_1': force_1,
+            'force_2': force_2,
+            'angle_1': angle_1,
+            'angle_2': angle_2
+        }
+        return data
+
+    def load_pixel_values_video(self, video_path, start_indice=0):
+
+        video_reader = VideoReader(video_path)
+        # if random.uniform(0, 1) < 0.5:
+        # indices = np.array([i for i in range(self.sample_n_frames)], dtype=int)
+        # else:
+        #     indices = np.array([2*i for i in range(self.sample_n_frames)], dtype=int)
+
+        indices = np.array([i for i in range(start_indice, start_indice + self.sample_n_frames)])
+
+
+        # Get the selected frames
+        np_video = video_reader.get_batch(indices).asnumpy() # (49, 480, 720, 3)
+        pixel_values = torch.from_numpy(np_video).permute(0, 3, 1, 2).contiguous() # (49, 3, 480, 720) of uint8 in [0, 255]
+        pixel_values = pixel_values / 127.5 - 1 # (49, 3, 480, 720) of torch.float32 in [-1, 1]
+        del video_reader
+
+        return pixel_values
+
+    def load_controlnet_signal(self, force_1, force_2, angle_1, angle_2, num_frames=49, num_channels=3, height=480, width=720, start_indice=0):
+        
+        controlnet_signal = torch.zeros((num_frames, num_channels, height, width))
+
+        half = 80 - start_indice
+        if half >= 0:
+            controlnet_signal[:half, 0] = -1 + 2*(force_1-self.min_force)/(self.max_force-self.min_force)
+            controlnet_signal[:half, 1] = math.cos(angle_1 * torch.pi / 180.0)
+            controlnet_signal[:half, 2] = math.sin(angle_1 * torch.pi / 180.0)
+
+            controlnet_signal[half:, 0] = -1 + 2*(force_2-self.min_force)/(self.max_force-self.min_force)
+            controlnet_signal[half:, 1] = math.cos(angle_2 * torch.pi / 180.0)
+            controlnet_signal[half:, 2] = math.sin(angle_2 * torch.pi / 180.0)
+
+        else:
+            controlnet_signal[:num_frames, 0] = -1 + 2*(force_2-self.min_force)/(self.max_force-self.min_force)
+            controlnet_signal[:num_frames, 1] = math.cos(angle_2 * torch.pi / 180.0)
+            controlnet_signal[:num_frames, 2] = math.sin(angle_2 * torch.pi / 180.0)
+
+        return controlnet_signal

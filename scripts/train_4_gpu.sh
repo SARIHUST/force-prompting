@@ -3,9 +3,11 @@
 export HF_HOME=.cache/ # moves cache to current working directory
 export MODEL_PATH="THUDM/CogVideoX-5b-I2V"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# export CUDA_VISIBLE_DEVICES=0 # e.g. 0 or 0,1,2,3
 export CUDA_VISIBLE_DEVICES=0,1,2,3 # e.g. 0 or 0,1,2,3
 export TOKENIZERS_PARALLELISM=false
 export LAUNCH_SCRIPT_PATH="$(readlink -f "$0")"
+export WANDB_MODE=offline
 
 # Default values
 RESUME_FROM_CHECKPOINT=false

@@ -5,6 +5,7 @@ conda-env
 *.pyc
 datasets/point-force/train
 datasets/wind-force/train
+datasets/wind-force-change
 output
 wandb
 scripts/build_synthetic_datasets/wind_model_waving_flags/HDRIs
@@ -16,3 +17,6 @@ datasets/point-force/test/custom
 datasets/wind-force/test/custom
 scripts/.nfsa2a3cc88ecd43d9e0000001f
 *.out
+slurm-logs/
+datasets
+inference_dataset

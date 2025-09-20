@@ -62,6 +62,7 @@ def get_args():
             "wind_force",
             "wind_force_bidirectional",
             "wind_force_change",
+            "wind_force_change_inference",
         ],
         help=("Controlnet type."),
     )

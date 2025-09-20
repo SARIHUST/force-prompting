@@ -610,7 +610,7 @@ def do_inference(
                 },
             }
 
-        elif args.controlnet_type == "wind_force" or args.controlnet_type == "wind_force_bidirectional" or args.controlnet_type == "wind_force_change": # wind force
+        elif args.controlnet_type == "wind_force" or args.controlnet_type == "wind_force_bidirectional" or args.controlnet_type == "wind_force_change_inference": # wind force
             if "force" in val_batch and "angle" in val_batch:
                 assert len(val_batch["force"]) == len(val_batch["angle"]) == 1
                 force = val_batch["force"][0]
@@ -796,7 +796,7 @@ def do_inference(
                     video_with_force_prompt_aesthetic = add_aesthetic_wind_force_bidirectional_prompt_to_video(
                         video, normalized_force, angle, num_frames_with_signal=49
                     )
-                elif args.controlnet_type == "wind_force_change":
+                elif args.controlnet_type == "wind_force_change_inference":
                     video_with_force_prompt_aesthetic = add_aesthetic_wind_force_change_prompt_to_video(
                         video, normalized_force, angle, idx, num_frames_with_signal=49
                     )

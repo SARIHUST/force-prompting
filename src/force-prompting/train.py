@@ -49,10 +49,12 @@ from data.controlnet_datasets import (
     ForcePromptingDataset_WindForce,
     ForcePromptingDataset_WindForce_Bidirectional,
     ForcePromptingDataset_WindForce_ChangeForce,
+    ForcePromptingDataset_WindForce_ChangeForce_Train,
 )
 from data.data_utils import (
     collate_fn_ForcePromptingDataset_PointForce,
     collate_fn_ForcePromptingDataset_WindForce,
+    collate_fn_ForcePromptingDataset_WindForce_Change,
 )
 
 import datetime
@@ -84,9 +86,12 @@ def get_dataloader_constructors(controlnet_type):
     elif controlnet_type == "wind_force_bidirectional":
         DatasetConstructor = ForcePromptingDataset_WindForce_Bidirectional
         collate_fn = collate_fn_ForcePromptingDataset_WindForce
-    elif controlnet_type == "wind_force_change":
+    elif controlnet_type == "wind_force_change_inference":
         DatasetConstructor = ForcePromptingDataset_WindForce_ChangeForce
         collate_fn = collate_fn_ForcePromptingDataset_WindForce
+    elif controlnet_type == "wind_force_change":
+        DatasetConstructor = ForcePromptingDataset_WindForce_ChangeForce_Train
+        collate_fn = collate_fn_ForcePromptingDataset_WindForce_Change
     else:
         raise NotImplementedError
     
@@ -790,7 +795,7 @@ def main(args):
                 global_step += 1
 
                 if accelerator.is_main_process:
-                    if global_step % args.checkpointing_steps == 0 and global_step > initial_global_step+10:
+                    if global_step % args.checkpointing_steps == 0 and global_step > initial_global_step+10 or global_step == 100:
                         save_path = os.path.join(args.output_dir, f"step-{global_step}-checkpoint.pt")
                         torch.save({'state_dict': unwrap_model(accelerator, controlnet).state_dict()}, save_path)
 
